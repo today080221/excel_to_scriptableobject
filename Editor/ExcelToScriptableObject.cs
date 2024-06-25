@@ -163,6 +163,9 @@ namespace GreatClock.Common.ExcelToSO {
 			foreach (SheetData sheet in sheets) {
 				FieldData firstField = sheet.fields[0];
 				bool hashStringKey = firstField.fieldType == eFieldTypes.String && settings.use_hash_string;
+				//Make a public property for data list
+				content.AppendLine($"{indent}\tpublic {sheet.itemClassName}[] {sheet.itemClassName}Items => _{sheet.itemClassName}Items;")
+				
 				content.AppendLine(string.Format("{0}\t{1}", indent, serializeAttribute));
 				content.AppendLine(string.Format("{0}\tprivate {1}[] _{1}Items;", indent, sheet.itemClassName));
 				if (settings.use_public_items_getter) {
