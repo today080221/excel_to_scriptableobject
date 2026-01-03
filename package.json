@@ -1,7 +1,7 @@
 {
   "displayName": "Excel To ScriptableObject",
   "name": "com.greatclock.exceltoscriptableobject",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "unity": "2018.4",
   "description": "An easy way to access datas defined in xlsx files.",
   "type": "library",
@@ -18,3 +18,4 @@
     "email": "thegreatclock@gmail.com"
   }
 }
+
