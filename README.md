@@ -8,7 +8,23 @@ It's used to transform data in xlsx (which defines field name and field type) di
 
 Nested data type in one xlsx file between sheets is supported.
 
-NO EXTRA API AT ALL. All you need to use will be in the generated codes。
+Runtime data access still lives in the generated codes. For editor tooling, the package also exposes a stable public import API so other Unity tools can import selected xlsx files without opening this window.
+
+```csharp
+using GreatClock.Common.ExcelToSO;
+
+var result = ExcelToScriptableObjectApi.ImportExcelPaths(new [] {
+    "Assets/ConfigCache/ItemsData.xlsx"
+});
+
+if (!result.success) {
+    foreach (var item in result.items) {
+        UnityEngine.Debug.LogError(string.Join("\n", item.errors));
+    }
+}
+```
+
+The API imports data into ScriptableObject assets only. It does not force C# code generation and reports imported / failed / skipped items in a structured result.
 
 ## How It Works
 

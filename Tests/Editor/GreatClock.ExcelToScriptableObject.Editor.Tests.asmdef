@@ -1,0 +1,18 @@
+{
+    "name": "GreatClock.ExcelToScriptableObject.Editor.Tests",
+    "references": [
+        "GreatClock.ExcelToScriptableObject.Editor"
+    ],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": []
+}

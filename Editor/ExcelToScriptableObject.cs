@@ -771,6 +771,7 @@ namespace GreatClock.Common.ExcelToSO {
 					sheet.indices.RemoveAt(i);
 				}
 			}
+			bool hasException = false;
 			try {
 				List<string> invalidFields = new List<string>();
 				foreach (SheetData sheet in sheets) {
@@ -1011,10 +1012,11 @@ namespace GreatClock.Common.ExcelToSO {
 				}
 			} catch (Exception e) {
 				Debug.LogException(e);
+				hasException = true;
 			}
 			EditorUtility.ClearProgressBar();
 			so.ApplyModifiedProperties();
-			return true;
+			return !hasException;
 		}
 
 		static bool ReadExcel(string excel_path, bool treat_unknown_types_as_enum, List<SheetData> sheets,
@@ -1025,12 +1027,12 @@ namespace GreatClock.Common.ExcelToSO {
 			hasRich = false;
 			if (!File.Exists(excel_path)) {
 				string msg = string.Format("Excel file '{0}' does not exist...", excel_path);
-				EditorUtility.DisplayDialog("Excel To ScriptableObject", msg, "OK");
+				ReportBlockingError(msg);
 				return false;
 			}
 			if (!CheckClassName(className)) {
 				string msg = string.Format("Invalid excel file '{0}', because the name of the xlsx file should be a class name...", excel_path);
-				EditorUtility.DisplayDialog("Excel To ScriptableObject", msg, "OK");
+				ReportBlockingError(msg);
 				return false;
 			}
 			int indexOfDot = excel_path.LastIndexOf('.');
@@ -1042,17 +1044,25 @@ namespace GreatClock.Common.ExcelToSO {
 			} catch {
 				File.Delete(tempExcel);
 				string msg = string.Format("Fail to open '{0}' because of sharing violation. Perhaps you should close your Excel application first...", excel_path);
-				EditorUtility.DisplayDialog("Excel To ScriptableObject", msg, "OK");
+				ReportBlockingError(msg);
 				return false;
 			}
-			IExcelDataReader reader = excel_path.ToLower().EndsWith(".xls") ? ExcelReaderFactory.CreateBinaryReader(stream) : ExcelReaderFactory.CreateOpenXmlReader(stream);
-			DataSet data = reader.AsDataSet();
-			reader.Dispose();
-			stream.Close();
-			File.Delete(tempExcel);
+			IExcelDataReader reader = null;
+			DataSet data = null;
+			try {
+				reader = excel_path.ToLower().EndsWith(".xls") ? ExcelReaderFactory.CreateBinaryReader(stream) : ExcelReaderFactory.CreateOpenXmlReader(stream);
+				data = reader.AsDataSet();
+			} catch (Exception e) {
+				Debug.LogException(e);
+				return false;
+			} finally {
+				if (reader != null) { reader.Dispose(); }
+				if (stream != null) { stream.Close(); }
+				if (File.Exists(tempExcel)) { File.Delete(tempExcel); }
+			}
 			if (data == null) {
 				string msg = string.Format("Fail to read '{0}'. It seems that it's not a proper xlsx file...", excel_path);
-				EditorUtility.DisplayDialog("Excel To ScriptableObject", msg, "OK");
+				ReportBlockingError(msg);
 				return false;
 			}
 			foreach (DataTable table in data.Tables) {
@@ -1063,7 +1073,7 @@ namespace GreatClock.Common.ExcelToSO {
 				if (table.Rows.Count < Mathf.Max(global_configs.field_row, global_configs.type_row) + 1) {
 					EditorUtility.ClearProgressBar();
 					string msg = string.Format("Fail to parse '{0}'. The excel file should contains at least 2 lines that specify the column names and their types...", excel_path);
-					EditorUtility.DisplayDialog("Excel To ScriptableObject", msg, "OK");
+					ReportBlockingError(msg);
 					return false;
 				}
 				sheet.itemClassName = tableName;
@@ -1093,7 +1103,7 @@ namespace GreatClock.Common.ExcelToSO {
 				if (!CheckClassName(sheet.itemClassName)) {
 					EditorUtility.ClearProgressBar();
 					string msg = string.Format("Invalid sheet name '{0}', because the name of the sheet should be a class name...", sheet.itemClassName);
-					EditorUtility.DisplayDialog("Excel To ScriptableObject", msg, "OK");
+					ReportBlockingError(msg);
 					return false;
 				}
 				object[] items;
@@ -1112,7 +1122,7 @@ namespace GreatClock.Common.ExcelToSO {
 					if (!CheckFieldName(fieldName)) {
 						EditorUtility.ClearProgressBar();
 						string msg = string.Format("Fail to parse '{0}' because of invalid field name '{1}'...", excel_path, fieldName);
-						EditorUtility.DisplayDialog("Excel To ScriptableObject", msg, "OK");
+						ReportBlockingError(msg);
 						return false;
 					}
 					FieldData field = new FieldData();
@@ -1123,7 +1133,7 @@ namespace GreatClock.Common.ExcelToSO {
 				if (sheet.fields.Count <= 0) {
 					EditorUtility.ClearProgressBar();
 					string msg = string.Format("Fail to parse '{0}' because of no appropriate field names...", excel_path);
-					EditorUtility.DisplayDialog("Excel To ScriptableObject", msg, "OK");
+					ReportBlockingError(msg);
 					return false;
 				}
 				int firstIndex = sheet.fields[0].fieldIndex;
@@ -1296,7 +1306,7 @@ namespace GreatClock.Common.ExcelToSO {
 				EditorUtility.ClearProgressBar();
 				string msg = string.Format("Fail to parse '{0}' because of invalid field type{1} '{2}'...",
 					excel_path, unknownTypes.Count > 1 ? "s" : "", string.Join(", ", typeStrs));
-				EditorUtility.DisplayDialog("Excel To ScriptableObject", msg, "OK");
+				ReportBlockingError(msg);
 				return false;
 			}
 			foreach (SheetData sheet in sheets) {
@@ -1600,6 +1610,67 @@ namespace GreatClock.Common.ExcelToSO {
 				return str.Substring(1, str.Length - 2);
 			}
 			return str;
+		}
+
+		private static int s_suppressDialogDepth;
+
+		private sealed class DialogSuppressionScope : IDisposable {
+			private bool mSuppress;
+
+			public DialogSuppressionScope(bool suppress) {
+				mSuppress = suppress;
+				if (mSuppress) { s_suppressDialogDepth++; }
+			}
+
+			public void Dispose() {
+				if (!mSuppress) { return; }
+				s_suppressDialogDepth = Mathf.Max(0, s_suppressDialogDepth - 1);
+				mSuppress = false;
+			}
+		}
+
+		private static void ReportBlockingError(string message) {
+			if (s_suppressDialogDepth > 0) {
+				Debug.LogError(message);
+				return;
+			}
+			EditorUtility.DisplayDialog("Excel To ScriptableObject", message, "OK");
+		}
+
+		internal static IDisposable SuppressDialogsForApi(bool suppress) {
+			return new DialogSuppressionScope(suppress);
+		}
+
+		internal static List<ExcelToScriptableObjectSetting> ReadSettingsForApi(out bool settingsFileExists) {
+			settingsFileExists = File.Exists(SETTINGS_PATH);
+			ReadsSettings();
+			return excel_settings == null ? new List<ExcelToScriptableObjectSetting>() : new List<ExcelToScriptableObjectSetting>(excel_settings);
+		}
+
+		internal static bool CheckProcessableForApi(ExcelToScriptableObjectSetting setting) {
+			return setting != null && CheckProcessable(setting);
+		}
+
+		internal static bool CheckProcessableForApi(ExcelToScriptableObjectSetting setting, string excelPath, string assetDirectory) {
+			return setting != null &&
+						!string.IsNullOrEmpty(excelPath) &&
+						CheckIsNameSpaceValid(setting.name_space) &&
+						CheckIsDirectoryValid(setting.script_directory) &&
+						CheckIsDirectoryValid(assetDirectory);
+		}
+
+		internal static string GetAssetPathForApi(string excelPath, string assetDirectory) {
+			string className = Path.GetFileNameWithoutExtension(excelPath);
+			if (string.IsNullOrEmpty(assetDirectory)) { assetDirectory = "Assets"; }
+			return assetDirectory.EndsWith("/") ? string.Concat(assetDirectory, className, ".asset") : string.Concat(assetDirectory, "/", className, ".asset");
+		}
+
+		internal static bool FlushDataForApi(ExcelToScriptableObjectSetting setting, string excelPath, string assetDirectory) {
+			if (setting == null) { return false; }
+			FlushDataSettings flushSetting = GetFlushDataSettings(setting);
+			flushSetting.excel_path = excelPath;
+			flushSetting.asset_directory = assetDirectory;
+			return FlushData(flushSetting);
 		}
 
 		static bool CheckIsNameSpaceValid(string ns) {

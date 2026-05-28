@@ -8,7 +8,23 @@
 
 支持同一Excel文件中多个sheet之间数据类型的嵌套。
 
-整个方案无任何API，所有需要程序代码调用的内容，都在生成的数据代码中。
+运行时读取仍然通过生成的数据代码完成。面向编辑器工具链时，包内也提供了稳定的 public 导入 API，其他 Unity 工具可以不打开窗口，直接导入指定 xlsx 到 ScriptableObject 资源。
+
+```csharp
+using GreatClock.Common.ExcelToSO;
+
+var result = ExcelToScriptableObjectApi.ImportExcelPaths(new [] {
+    "Assets/ConfigCache/ItemsData.xlsx"
+});
+
+if (!result.success) {
+    foreach (var item in result.items) {
+        UnityEngine.Debug.LogError(string.Join("\n", item.errors));
+    }
+}
+```
+
+这个 API 只导入数据到 Unity asset，不强制重新生成 C#，并会用结构化结果列出成功、失败和跳过的表。
 
 ## 内部原理
 
