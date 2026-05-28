@@ -1141,6 +1141,12 @@ namespace GreatClock.Common.ExcelToSO {
 				for (int i = 0, imax = sheet.fields.Count; i < imax; i++) {
 					FieldData field = sheet.fields[i];
 					string typeName = items[field.fieldIndex].ToString();
+					if (IsJsonFieldType(typeName)) {
+						EditorUtility.ClearProgressBar();
+						string msg = BuildJsonFieldTypeError(excel_path, sheet.itemClassName, field.fieldIndex, global_configs.type_row, typeName);
+						ReportBlockingError(msg);
+						return false;
+					}
 					eFieldTypes fieldType = GetFieldType(typeName);
 					if (fieldType == eFieldTypes.Unknown) {
 						fieldType = eFieldTypes.UnknownList;
@@ -1451,10 +1457,12 @@ namespace GreatClock.Common.ExcelToSO {
 			eFieldTypes type = eFieldTypes.Unknown;
 			switch (typename.Trim().ToLower()) {
 				case "bool":
+				case "boolean":
 					type = eFieldTypes.Bool;
 					break;
 				case "int":
 				case "int32":
+				case "integer":
 					type = eFieldTypes.Int;
 					break;
 				case "ints":
@@ -1463,14 +1471,21 @@ namespace GreatClock.Common.ExcelToSO {
 				case "int32s":
 				case "int32[]":
 				case "[int32]":
+				case "integers":
+				case "integer[]":
+				case "[integer]":
 					type = eFieldTypes.Ints;
 					break;
 				case "float":
+				case "number":
 					type = eFieldTypes.Float;
 					break;
 				case "floats":
 				case "float[]":
 				case "[float]":
+				case "numbers":
+				case "number[]":
+				case "[number]":
 					type = eFieldTypes.Floats;
 					break;
 				case "long":
@@ -1503,11 +1518,15 @@ namespace GreatClock.Common.ExcelToSO {
 					type = eFieldTypes.Color;
 					break;
 				case "string":
+				case "text":
 					type = eFieldTypes.String;
 					break;
 				case "strings":
 				case "string[]":
 				case "[string]":
+				case "texts":
+				case "text[]":
+				case "[text]":
 					type = eFieldTypes.Strings;
 					break;
 				case "lang":
@@ -1538,6 +1557,32 @@ namespace GreatClock.Common.ExcelToSO {
 					break;
 			}
 			return type;
+		}
+
+		static bool IsJsonFieldType(string typename) {
+			return !string.IsNullOrEmpty(typename) && typename.Trim().ToLower() == "json";
+		}
+
+		static string BuildJsonFieldTypeError(string excelPath, string tableName, int columnIndex, int typeRowIndex, string rawType) {
+			string cell = GetColumnName(columnIndex + 1) + (typeRowIndex + 1).ToString();
+			string safeTableName = string.IsNullOrEmpty(tableName) ? Path.GetFileNameWithoutExtension(excelPath) : tableName;
+			return string.Format(
+				"无法导入配表 \"{0}\"：{1}!{2} 的字段类型是 \"{3}\"。ExcelToSO 不能自动判断 json 应该导成数组还是文本，请在 Source of Truth schema 或旧表类型中明确改成 int[]、float[]、string[] 或 string。",
+				safeTableName,
+				safeTableName,
+				cell,
+				string.IsNullOrEmpty(rawType) ? "json" : rawType.Trim());
+		}
+
+		static string GetColumnName(int columnNumber) {
+			if (columnNumber <= 0) { return "A"; }
+			string name = string.Empty;
+			while (columnNumber > 0) {
+				int modulo = (columnNumber - 1) % 26;
+				name = Convert.ToChar('A' + modulo) + name;
+				columnNumber = (columnNumber - modulo) / 26;
+			}
+			return name;
 		}
 
 		static string GetFieldTypeName(eFieldTypes type) {

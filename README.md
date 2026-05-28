@@ -86,7 +86,7 @@ The API imports data into ScriptableObject assets only. It does not force C# cod
 
 ### Boolean
 
-Identifier : bool
+Identifier : bool, boolean
 
 Value Example : 
 
@@ -102,7 +102,7 @@ Value Example :
 
 ### 32bit Integer
 
-Identifier : int, int32
+Identifier : int, int32, integer
 
 Value Example : 
 
@@ -114,7 +114,7 @@ Value Example :
 
 ### 32bit Integer Array
 
-Identifier : ints, int[], [int], int32s, int32[], [int32]
+Identifier : ints, int[], [int], int32s, int32[], [int32], integers, integer[], [integer]
 
 Value Example : 
 
@@ -146,7 +146,7 @@ Value Example :
 
 ### Float
 
-Identifier : float
+Identifier : float, number
 
 Value Example : 
 
@@ -160,7 +160,7 @@ Value Example :
 
 ### Float Array
 
-Identifier : floats, float[], [float]
+Identifier : floats, float[], [float], numbers, number[], [number]
 
 Value Example : 
 
@@ -232,7 +232,7 @@ Value Example :
 
 ### String
 
-Identifier : string
+Identifier : string, text
 
 Value Example : 
 
@@ -240,7 +240,7 @@ Value Example :
 
 ### String Array
 
-Identifier : strings, string[], [string]
+Identifier : strings, string[], [string], texts, text[], [text]
 
 Value Example : 
 

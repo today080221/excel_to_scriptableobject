@@ -84,7 +84,7 @@ if (!result.success) {
 
 ### 布尔值
 
-标识符：bool
+标识符：bool、boolean
 
 表示方法：
 
@@ -100,7 +100,7 @@ if (!result.success) {
 
 ### 短整型数
 
-标识符：int、int32
+标识符：int、int32、integer
 
 表示方法：
 
@@ -112,7 +112,7 @@ if (!result.success) {
 
 ### 短整形数数组
 
-标识符：ints、int[]、[int]、int32s、int32[]、[int32]
+标识符：ints、int[]、[int]、int32s、int32[]、[int32]、integers、integer[]、[integer]
 
 表示方法：
 
@@ -142,7 +142,7 @@ if (!result.success) {
 
 ### 浮点数
 
-标识符：float
+标识符：float、number
 
 表示方法：
 
@@ -156,7 +156,7 @@ if (!result.success) {
 
 ### 浮点数数组
 
-标识符：floats、float[]、[float]
+标识符：floats、float[]、[float]、numbers、number[]、[number]
 
 表示方法：
 
@@ -228,7 +228,7 @@ if (!result.success) {
 
 ### 字符串
 
-标识符：string
+标识符：string、text
 
 表示方法：
 
@@ -236,7 +236,7 @@ if (!result.success) {
 
 ### 字符串数组
 
-标识符：strings、string[]、[string]
+标识符：strings、string[]、[string]、texts、text[]、[text]
 
 表示方法：
 

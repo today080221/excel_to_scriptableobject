@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using NUnit.Framework;
 using UnityEditor;
@@ -77,6 +78,37 @@ namespace GreatClock.Common.ExcelToSO.Tests {
 			Assert.That(result.items.All(item => item.errors.Length > 0), Is.True);
 		}
 
+		[Test]
+		public void FieldTypeParserAcceptsSourceOfTruthAliases() {
+			AssertFieldType("integer", "Int");
+			AssertFieldType("boolean", "Bool");
+			AssertFieldType("text", "String");
+			AssertFieldType("number", "Float");
+			AssertFieldType("integer[]", "Ints");
+			AssertFieldType("integers", "Ints");
+			AssertFieldType("[integer]", "Ints");
+			AssertFieldType("number[]", "Floats");
+			AssertFieldType("numbers", "Floats");
+			AssertFieldType("[number]", "Floats");
+			AssertFieldType("text[]", "Strings");
+			AssertFieldType("[text]", "Strings");
+		}
+
+		[Test]
+		public void JsonFieldTypeErrorTellsUserToChooseConcreteExcelToSoType() {
+			MethodInfo method = typeof(ExcelToScriptableObject).GetMethod("BuildJsonFieldTypeError", BindingFlags.NonPublic | BindingFlags.Static);
+			Assert.That(method, Is.Not.Null);
+
+			string message = (string)method.Invoke(null, new object[] { "Assets/ConfigCache/NpcUnitData.xlsx", "NpcUnitData", 19, 1, "json" });
+
+			Assert.That(message, Does.Contain("NpcUnitData!T2"));
+			Assert.That(message, Does.Contain("json"));
+			Assert.That(message, Does.Contain("int[]"));
+			Assert.That(message, Does.Contain("float[]"));
+			Assert.That(message, Does.Contain("string[]"));
+			Assert.That(message, Does.Contain("string"));
+		}
+
 		private static void WriteSettings(params string[] excelPaths) {
 			ExcelToScriptableObjectSetting[] settings = excelPaths.Select(path => new ExcelToScriptableObjectSetting() {
 				excel_name = path,
@@ -90,6 +122,13 @@ namespace GreatClock.Common.ExcelToSO.Tests {
 				excels = settings
 			};
 			File.WriteAllText(ExcelToScriptableObject.SETTINGS_PATH, JsonUtility.ToJson(data, true), Encoding.UTF8);
+		}
+
+		private static void AssertFieldType(string token, string expectedEnumName) {
+			MethodInfo method = typeof(ExcelToScriptableObject).GetMethod("GetFieldType", BindingFlags.NonPublic | BindingFlags.Static);
+			Assert.That(method, Is.Not.Null);
+			object value = method.Invoke(null, new object[] { token });
+			Assert.That(value.ToString(), Is.EqualTo(expectedEnumName));
 		}
 	}
 }
