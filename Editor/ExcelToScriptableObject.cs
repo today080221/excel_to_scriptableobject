@@ -16,6 +16,9 @@ namespace GreatClock.Common.ExcelToSO {
 	public class ExcelToScriptableObject : EditorWindow {
 
 		public const string SETTINGS_PATH = "ProjectSettings/ExcelToScriptableObjectSettings.asset";
+		public const string DEFAULT_PROFILE_ID = "default";
+		public const string SOURCE_OF_TRUTH_CACHE_PROFILE_ID = "SourceOfTruthCache";
+		private const string PROFILE_PREF_KEY = "excel_to_scriptableobject.active_profile";
 
 		private static Regex reg_color32 = new Regex(@"^[A-Fa-f0-9]{8}$");
 		private static Regex reg_color24 = new Regex(@"^[A-Fa-f0-9]{6}$");
@@ -29,7 +32,7 @@ namespace GreatClock.Common.ExcelToSO {
 
 		[MenuItem("GreatClock/Excel To ScriptableObject/Process All")]
 		public static void ProcessAll() {
-			ReadsSettings();
+			ReadsSettings(DEFAULT_PROFILE_ID);
 			for (int i = 0, imax = excel_settings.Count; i < imax; i++) {
 				ExcelToScriptableObjectSetting excel_setting = excel_settings[i];
 				if (!CheckProcessable(excel_setting)) { continue; }
@@ -1686,12 +1689,6 @@ namespace GreatClock.Common.ExcelToSO {
 			return new DialogSuppressionScope(suppress);
 		}
 
-		internal static List<ExcelToScriptableObjectSetting> ReadSettingsForApi(out bool settingsFileExists) {
-			settingsFileExists = File.Exists(SETTINGS_PATH);
-			ReadsSettings();
-			return excel_settings == null ? new List<ExcelToScriptableObjectSetting>() : new List<ExcelToScriptableObjectSetting>(excel_settings);
-		}
-
 		internal static bool CheckProcessableForApi(ExcelToScriptableObjectSetting setting) {
 			return setting != null && CheckProcessable(setting);
 		}
@@ -1747,26 +1744,166 @@ namespace GreatClock.Common.ExcelToSO {
 
 		static ExcelToScriptableObjectGlobalConfigs global_configs = new ExcelToScriptableObjectGlobalConfigs();
 		static List<ExcelToScriptableObjectSetting> excel_settings = null;
+		static List<ExcelToScriptableObjectProfile> settings_profiles = new List<ExcelToScriptableObjectProfile>();
+		static string active_profile_id = DEFAULT_PROFILE_ID;
 
 		static void ReadsSettings() {
+			ReadsSettings(EditorPrefs.GetString(PROFILE_PREF_KEY, DEFAULT_PROFILE_ID));
+		}
+
+		static void ReadsSettings(string profileId) {
 			excel_settings = new List<ExcelToScriptableObjectSetting>();
-			string json = File.Exists(SETTINGS_PATH) ? File.ReadAllText(SETTINGS_PATH, Encoding.UTF8) : null;
-			if (!string.IsNullOrEmpty(json)) {
-				ExcelToScriptableObjectSettings settings = JsonUtility.FromJson<ExcelToScriptableObjectSettings>(json);
-				global_configs = settings.configs;
-				if (settings.excels != null) {
-					excel_settings.AddRange(settings.excels);
-				}
+			bool settingsFileExists;
+			ExcelToScriptableObjectSettings settings = ReadSettingsDocumentForApi(SETTINGS_PATH, out settingsFileExists);
+			settings_profiles = BuildProfileListForApi(settings);
+			string resolvedProfileId;
+			ExcelToScriptableObjectProfile profile = ResolveProfileForApi(settings, profileId, out resolvedProfileId);
+			if (profile == null) {
+				profile = ResolveProfileForApi(settings, DEFAULT_PROFILE_ID, out resolvedProfileId);
+			}
+			active_profile_id = string.IsNullOrEmpty(resolvedProfileId) ? DEFAULT_PROFILE_ID : resolvedProfileId;
+			global_configs = profile != null && profile.configs != null ? profile.configs : new ExcelToScriptableObjectGlobalConfigs();
+			if (profile != null && profile.excels != null) {
+				excel_settings.AddRange(profile.excels);
 			}
 			if (global_configs == null) { global_configs = new ExcelToScriptableObjectGlobalConfigs(); }
 		}
 
 		static void WriteSettings() {
 			if (excel_settings == null) { return; }
-			ExcelToScriptableObjectSettings data = new ExcelToScriptableObjectSettings();
-			data.configs = global_configs;
-			data.excels = excel_settings.ToArray();
+			bool settingsFileExists;
+			ExcelToScriptableObjectSettings data = ReadSettingsDocumentForApi(SETTINGS_PATH, out settingsFileExists);
+			if (data == null) { data = new ExcelToScriptableObjectSettings(); }
+			bool hasProfiles = data.profiles != null && data.profiles.Length > 0;
+			string profileId = NormalizeProfileId(active_profile_id);
+			if (!hasProfiles && IsDefaultProfileId(profileId)) {
+				data.configs = global_configs;
+				data.excels = excel_settings.ToArray();
+			} else {
+				List<ExcelToScriptableObjectProfile> profiles = BuildProfileListForApi(data);
+				ExcelToScriptableObjectProfile profile = FindProfile(profiles, profileId);
+				if (profile == null) {
+					profile = new ExcelToScriptableObjectProfile();
+					profile.profile_id = profileId;
+					profiles.Add(profile);
+				}
+				profile.configs = global_configs;
+				profile.excels = excel_settings.ToArray();
+				if (IsDefaultProfileId(profileId)) {
+					data.configs = global_configs;
+					data.excels = excel_settings.ToArray();
+				}
+				data.profiles = profiles.ToArray();
+			}
 			File.WriteAllText(SETTINGS_PATH, JsonUtility.ToJson(data, true), Encoding.UTF8);
+		}
+
+		internal static List<ExcelToScriptableObjectSetting> ReadSettingsForApi(out bool settingsFileExists) {
+			return ReadSettingsForApi(DEFAULT_PROFILE_ID, SETTINGS_PATH, out settingsFileExists);
+		}
+
+		internal static List<ExcelToScriptableObjectSetting> ReadSettingsForApi(string profileId, string settingsPath, out bool settingsFileExists) {
+			string resolvedProfileId;
+			ExcelToScriptableObjectProfile profile = ReadProfileForApi(profileId, settingsPath, out settingsFileExists, out resolvedProfileId);
+			if (profile == null || profile.excels == null) { return new List<ExcelToScriptableObjectSetting>(); }
+			return new List<ExcelToScriptableObjectSetting>(profile.excels);
+		}
+
+		internal static ExcelToScriptableObjectProfile ReadProfileForApi(string profileId, string settingsPath, out bool settingsFileExists, out string resolvedProfileId) {
+			ExcelToScriptableObjectSettings settings = ReadSettingsDocumentForApi(settingsPath, out settingsFileExists);
+			return ResolveProfileForApi(settings, profileId, out resolvedProfileId);
+		}
+
+		internal static ExcelToScriptableObjectSettings ReadSettingsDocumentForApi(string settingsPath, out bool settingsFileExists) {
+			if (string.IsNullOrEmpty(settingsPath)) { settingsPath = SETTINGS_PATH; }
+			settingsFileExists = File.Exists(settingsPath);
+			if (!settingsFileExists) { return new ExcelToScriptableObjectSettings(); }
+			string json = File.ReadAllText(settingsPath, Encoding.UTF8);
+			if (string.IsNullOrEmpty(json)) { return new ExcelToScriptableObjectSettings(); }
+			ExcelToScriptableObjectSettings settings = JsonUtility.FromJson<ExcelToScriptableObjectSettings>(json);
+			return settings ?? new ExcelToScriptableObjectSettings();
+		}
+
+		internal static ExcelToScriptableObjectProfile ResolveProfileForApi(ExcelToScriptableObjectSettings settings, string profileId, out string resolvedProfileId) {
+			resolvedProfileId = DEFAULT_PROFILE_ID;
+			if (settings == null) { settings = new ExcelToScriptableObjectSettings(); }
+			List<ExcelToScriptableObjectProfile> profiles = BuildProfileListForApi(settings);
+			string requested = NormalizeProfileId(profileId);
+			ExcelToScriptableObjectProfile profile = FindProfile(profiles, requested);
+			if (profile == null && IsDefaultProfileId(requested)) {
+				profile = FindProfile(profiles, DEFAULT_PROFILE_ID);
+			}
+			if (profile == null && string.Equals(requested, "local", StringComparison.OrdinalIgnoreCase)) {
+				profile = FindProfile(profiles, DEFAULT_PROFILE_ID);
+			}
+			if (profile == null) {
+				resolvedProfileId = requested;
+				return null;
+			}
+			resolvedProfileId = string.IsNullOrEmpty(profile.profile_id) ? DEFAULT_PROFILE_ID : profile.profile_id;
+			return profile;
+		}
+
+		internal static List<ExcelToScriptableObjectProfile> BuildProfileListForApi(ExcelToScriptableObjectSettings settings) {
+			List<ExcelToScriptableObjectProfile> profiles = new List<ExcelToScriptableObjectProfile>();
+			if (settings == null) { settings = new ExcelToScriptableObjectSettings(); }
+			if (settings.profiles != null && settings.profiles.Length > 0) {
+				for (int i = 0, imax = settings.profiles.Length; i < imax; i++) {
+					ExcelToScriptableObjectProfile profile = settings.profiles[i];
+					if (profile == null) { continue; }
+					if (string.IsNullOrEmpty(profile.profile_id)) { profile.profile_id = DEFAULT_PROFILE_ID; }
+					if (profile.configs == null) { profile.configs = settings.configs ?? new ExcelToScriptableObjectGlobalConfigs(); }
+					if (profile.excels == null) { profile.excels = new ExcelToScriptableObjectSetting[0]; }
+					profiles.Add(profile);
+				}
+			}
+			if (FindProfile(profiles, DEFAULT_PROFILE_ID) == null) {
+				ExcelToScriptableObjectProfile legacy = new ExcelToScriptableObjectProfile();
+				legacy.profile_id = DEFAULT_PROFILE_ID;
+				legacy.display_name = "本地 Excel";
+				legacy.description = "本地 Excel / OneDrive 工作流。";
+				legacy.input_root = "Excel/";
+				legacy.configs = settings.configs ?? new ExcelToScriptableObjectGlobalConfigs();
+				legacy.excels = settings.excels ?? new ExcelToScriptableObjectSetting[0];
+				profiles.Insert(0, legacy);
+			}
+			return profiles;
+		}
+
+		private static ExcelToScriptableObjectProfile FindProfile(List<ExcelToScriptableObjectProfile> profiles, string profileId) {
+			string requested = NormalizeProfileId(profileId);
+			if (profiles == null) { return null; }
+			for (int i = 0, imax = profiles.Count; i < imax; i++) {
+				ExcelToScriptableObjectProfile profile = profiles[i];
+				if (profile == null) { continue; }
+				if (string.Equals(NormalizeProfileId(profile.profile_id), requested, StringComparison.OrdinalIgnoreCase)) {
+					return profile;
+				}
+				if (IsDefaultProfileId(requested) && IsDefaultProfileId(profile.profile_id)) {
+					return profile;
+				}
+			}
+			return null;
+		}
+
+		private static string NormalizeProfileId(string profileId) {
+			if (string.IsNullOrEmpty(profileId)) { return DEFAULT_PROFILE_ID; }
+			profileId = profileId.Trim();
+			return string.Equals(profileId, "local", StringComparison.OrdinalIgnoreCase) ? DEFAULT_PROFILE_ID : profileId;
+		}
+
+		private static bool IsDefaultProfileId(string profileId) {
+			return string.IsNullOrEmpty(profileId) ||
+				string.Equals(profileId, DEFAULT_PROFILE_ID, StringComparison.OrdinalIgnoreCase) ||
+				string.Equals(profileId, "local", StringComparison.OrdinalIgnoreCase);
+		}
+
+		private static string GetProfileDisplayName(ExcelToScriptableObjectProfile profile) {
+			if (profile == null) { return "本地 Excel"; }
+			if (!string.IsNullOrEmpty(profile.display_name)) { return profile.display_name; }
+			if (string.Equals(profile.profile_id, SOURCE_OF_TRUTH_CACHE_PROFILE_ID, StringComparison.OrdinalIgnoreCase)) { return "Source of Truth cache"; }
+			if (IsDefaultProfileId(profile.profile_id)) { return "本地 Excel"; }
+			return profile.profile_id;
 		}
 
 		private class ToProcess {
@@ -2302,6 +2439,7 @@ namespace GreatClock.Common.ExcelToSO {
 			}
 			EditorGUI.BeginDisabledGroup(EditorApplication.isCompiling);
 			GUILayout.Space(4f);
+			DrawProfileSelector();
 			EditorGUILayout.BeginHorizontal(GUILayout.MinHeight(10f));
 			EditorGUILayout.BeginVertical();
 			EditorGUILayout.LabelField("Global Settings :");
@@ -2401,6 +2539,56 @@ namespace GreatClock.Common.ExcelToSO {
 				mToProcess.to_generate_code.Clear();
 				AssetDatabase.Refresh();
 			}
+		}
+
+		private void DrawProfileSelector() {
+			if (settings_profiles == null || settings_profiles.Count == 0) {
+				bool ignored;
+				ExcelToScriptableObjectSettings settings = ReadSettingsDocumentForApi(SETTINGS_PATH, out ignored);
+				settings_profiles = BuildProfileListForApi(settings);
+			}
+			int selected = 0;
+			string[] labels = new string[settings_profiles.Count];
+			for (int i = 0, imax = settings_profiles.Count; i < imax; i++) {
+				ExcelToScriptableObjectProfile profile = settings_profiles[i];
+				labels[i] = GetProfileDisplayName(profile);
+				if (profile != null && string.Equals(NormalizeProfileId(profile.profile_id), NormalizeProfileId(active_profile_id), StringComparison.OrdinalIgnoreCase)) {
+					selected = i;
+				}
+			}
+			EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+			EditorGUILayout.BeginHorizontal();
+			EditorGUILayout.LabelField("Profile", GUILayout.Width(80f));
+			int next = EditorGUILayout.Popup(selected, labels);
+			GUILayout.FlexibleSpace();
+			EditorGUILayout.EndHorizontal();
+			ExcelToScriptableObjectProfile activeProfile = settings_profiles.Count > 0 ? settings_profiles[Mathf.Clamp(selected, 0, settings_profiles.Count - 1)] : null;
+			EditorGUILayout.LabelField(BuildProfileDescription(activeProfile), EditorStyles.wordWrappedMiniLabel);
+			EditorGUILayout.EndVertical();
+			if (next != selected && next >= 0 && next < settings_profiles.Count) {
+				string nextProfileId = NormalizeProfileId(settings_profiles[next].profile_id);
+				EditorPrefs.SetString(PROFILE_PREF_KEY, nextProfileId);
+				active_profile_id = nextProfileId;
+				mSettingsDataList = null;
+				mSettingsDrawList = null;
+				OnFocus();
+				GUI.changed = false;
+				Repaint();
+				GUIUtility.ExitGUI();
+			}
+		}
+
+		private static string BuildProfileDescription(ExcelToScriptableObjectProfile profile) {
+			if (profile == null) { return "本地 Excel / OneDrive 工作流。"; }
+			string root = string.IsNullOrEmpty(profile.input_root) ? "" : " 输入根目录: " + profile.input_root;
+			if (!string.IsNullOrEmpty(profile.description)) { return profile.description + root; }
+			if (profile.source_of_truth_cache || string.Equals(profile.profile_id, SOURCE_OF_TRUTH_CACHE_PROFILE_ID, StringComparison.OrdinalIgnoreCase)) {
+				return "由飞书 Source of Truth 生成，请不要手改 cache。" + root;
+			}
+			if (IsDefaultProfileId(profile.profile_id)) {
+				return "本地 Excel / OneDrive 工作流。" + root;
+			}
+			return string.IsNullOrEmpty(profile.input_root) ? "自定义导入 profile。" : "输入根目录: " + profile.input_root;
 		}
 
 		private void FilterSettings() {
@@ -2596,6 +2784,18 @@ namespace GreatClock.Common.ExcelToSO {
 
 	[Serializable]
 	public class ExcelToScriptableObjectSettings {
+		public ExcelToScriptableObjectGlobalConfigs configs;
+		public ExcelToScriptableObjectSetting[] excels;
+		public ExcelToScriptableObjectProfile[] profiles;
+	}
+
+	[Serializable]
+	public class ExcelToScriptableObjectProfile {
+		public string profile_id = ExcelToScriptableObject.DEFAULT_PROFILE_ID;
+		public string display_name;
+		public string description;
+		public string input_root;
+		public bool source_of_truth_cache = false;
 		public ExcelToScriptableObjectGlobalConfigs configs;
 		public ExcelToScriptableObjectSetting[] excels;
 	}

@@ -17,6 +17,9 @@ var result = ExcelToScriptableObjectApi.ImportExcelPaths(new [] {
     "Assets/ConfigCache/ItemsData.xlsx"
 });
 
+var sourceOfTruthResult = ExcelToScriptableObjectApi.ImportByProfile(
+    ExcelToScriptableObject.SOURCE_OF_TRUTH_CACHE_PROFILE_ID);
+
 if (!result.success) {
     foreach (var item in result.items) {
         UnityEngine.Debug.LogError(string.Join("\n", item.errors));
@@ -25,6 +28,8 @@ if (!result.success) {
 ```
 
 The API imports data into ScriptableObject assets only. It does not force C# code generation and reports imported / failed / skipped items in a structured result.
+
+Since v1.0.6, settings can contain named profiles. The legacy single `configs + excels` settings file is treated as the `default` local Excel profile. Tools and CI can add a separate `SourceOfTruthCache` profile that points at generated cache files without changing the profile designers see when they open the ExcelToSO window.
 
 ## How It Works
 

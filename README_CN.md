@@ -17,6 +17,9 @@ var result = ExcelToScriptableObjectApi.ImportExcelPaths(new [] {
     "Assets/ConfigCache/ItemsData.xlsx"
 });
 
+var sourceOfTruthResult = ExcelToScriptableObjectApi.ImportByProfile(
+    ExcelToScriptableObject.SOURCE_OF_TRUTH_CACHE_PROFILE_ID);
+
 if (!result.success) {
     foreach (var item in result.items) {
         UnityEngine.Debug.LogError(string.Join("\n", item.errors));
@@ -25,6 +28,8 @@ if (!result.success) {
 ```
 
 这个 API 只导入数据到 Unity asset，不强制重新生成 C#，并会用结构化结果列出成功、失败和跳过的表。
+
+从 v1.0.6 开始，settings 支持 named profiles。旧的单 `configs + excels` 文件会自动当成 `default` 本地 Excel profile。工具和 CI 可以额外写入 `SourceOfTruthCache` profile，指向生成的 cache 文件；这样不会改变策划打开 ExcelToSO 窗口时看到的本地 Excel profile。
 
 ## 内部原理
 

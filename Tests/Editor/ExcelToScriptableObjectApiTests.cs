@@ -79,6 +79,40 @@ namespace GreatClock.Common.ExcelToSO.Tests {
 		}
 
 		[Test]
+		public void LegacySingleProfileLoadsAsDefaultProfile() {
+			string requested = TempRoot + "/Broken.xlsx";
+			WriteSettings(requested);
+
+			ExcelToScriptableObjectImportResult result = ExcelToScriptableObjectApi.ImportByProfile(ExcelToScriptableObject.DEFAULT_PROFILE_ID);
+
+			Assert.That(result.profileId, Is.EqualTo(ExcelToScriptableObject.DEFAULT_PROFILE_ID));
+			Assert.That(result.items.Select(item => item.excelPath), Is.EquivalentTo(new[] { requested }));
+		}
+
+		[Test]
+		public void ImportByProfileUsesSourceOfTruthCacheWithoutChangingUiSelection() {
+			string previousProfile = EditorPrefs.GetString("excel_to_scriptableobject.active_profile", "");
+			EditorPrefs.SetString("excel_to_scriptableobject.active_profile", ExcelToScriptableObject.DEFAULT_PROFILE_ID);
+			try {
+				string local = TempRoot + "/Local.xlsx";
+				string cache = TempRoot + "/Cache.xlsx";
+				WriteProfileSettings(local, cache);
+
+				ExcelToScriptableObjectImportResult result = ExcelToScriptableObjectApi.ImportByProfile(ExcelToScriptableObject.SOURCE_OF_TRUTH_CACHE_PROFILE_ID);
+
+				Assert.That(result.profileId, Is.EqualTo(ExcelToScriptableObject.SOURCE_OF_TRUTH_CACHE_PROFILE_ID));
+				Assert.That(result.items.Select(item => item.excelPath), Is.EquivalentTo(new[] { cache }));
+				Assert.That(EditorPrefs.GetString("excel_to_scriptableobject.active_profile", ""), Is.EqualTo(ExcelToScriptableObject.DEFAULT_PROFILE_ID));
+			} finally {
+				if (string.IsNullOrEmpty(previousProfile)) {
+					EditorPrefs.DeleteKey("excel_to_scriptableobject.active_profile");
+				} else {
+					EditorPrefs.SetString("excel_to_scriptableobject.active_profile", previousProfile);
+				}
+			}
+		}
+
+		[Test]
 		public void FieldTypeParserAcceptsSourceOfTruthAliases() {
 			AssertFieldType("integer", "Int");
 			AssertFieldType("boolean", "Bool");
@@ -122,6 +156,41 @@ namespace GreatClock.Common.ExcelToSO.Tests {
 				excels = settings
 			};
 			File.WriteAllText(ExcelToScriptableObject.SETTINGS_PATH, JsonUtility.ToJson(data, true), Encoding.UTF8);
+		}
+
+		private static void WriteProfileSettings(string localPath, string cachePath) {
+			ExcelToScriptableObjectSettings data = new ExcelToScriptableObjectSettings() {
+				configs = new ExcelToScriptableObjectGlobalConfigs(),
+				excels = new[] { BuildSetting(localPath) },
+				profiles = new[] {
+					new ExcelToScriptableObjectProfile() {
+						profile_id = ExcelToScriptableObject.DEFAULT_PROFILE_ID,
+						display_name = "本地 Excel",
+						input_root = "Excel/",
+						configs = new ExcelToScriptableObjectGlobalConfigs(),
+						excels = new[] { BuildSetting(localPath) }
+					},
+					new ExcelToScriptableObjectProfile() {
+						profile_id = ExcelToScriptableObject.SOURCE_OF_TRUTH_CACHE_PROFILE_ID,
+						display_name = "Source of Truth cache",
+						input_root = ".config-sheet-forge/excel-cache/",
+						source_of_truth_cache = true,
+						configs = new ExcelToScriptableObjectGlobalConfigs(),
+						excels = new[] { BuildSetting(cachePath) }
+					}
+				}
+			};
+			File.WriteAllText(ExcelToScriptableObject.SETTINGS_PATH, JsonUtility.ToJson(data, true), Encoding.UTF8);
+		}
+
+		private static ExcelToScriptableObjectSetting BuildSetting(string path) {
+			return new ExcelToScriptableObjectSetting() {
+				excel_name = path,
+				script_directory = TempGenerated,
+				asset_directory = TempGenerated,
+				name_space = "GreatClock.Common.ExcelToSO.Tests",
+				slaves = new ExcelToScriptableObjectSlave[0]
+			};
 		}
 
 		private static void AssertFieldType(string token, string expectedEnumName) {
