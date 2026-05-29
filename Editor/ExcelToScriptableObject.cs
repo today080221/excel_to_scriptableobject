@@ -780,6 +780,12 @@ namespace GreatClock.Common.ExcelToSO {
 				foreach (SheetData sheet in sheets) {
 					invalidFields.Clear();
 					SerializedProperty pItems = so.FindProperty(string.Format("_{0}Items", sheet.itemClassName));
+					if (pItems == null) {
+						string msg = string.Format("{0} 的工作表名为 {1}，但目标资产 {2} 中没有 _{1}Items。请检查 xlsx 工作表名是否与生成脚本里的 item class name 一致。", settings.excel_path, sheet.itemClassName, assetPath);
+						ReportBlockingError(msg);
+						hasException = true;
+						continue;
+					}
 					pItems.ClearArray();
 					for (int i = 0, imax = sheet.indices.Count; i < imax; i++) {
 						if (EditorUtility.DisplayCancelableProgressBar("Excel", string.Format("Serializing datas... {0} / {1}", i, imax), (i + 0f) / imax)) {
@@ -1057,6 +1063,8 @@ namespace GreatClock.Common.ExcelToSO {
 				data = reader.AsDataSet();
 			} catch (Exception e) {
 				Debug.LogException(e);
+				string msg = string.Format("读取 Excel 文件失败：{0}。原因：{1}: {2}", excel_path, e.GetType().Name, e.Message);
+				ReportBlockingError(msg);
 				return false;
 			} finally {
 				if (reader != null) { reader.Dispose(); }
