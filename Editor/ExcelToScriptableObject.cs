@@ -1723,6 +1723,14 @@ namespace GreatClock.Common.ExcelToSO {
 			return FlushData(flushSetting);
 		}
 
+		internal static ExcelToScriptableObjectGlobalConfigs GetGlobalConfigsForApi() {
+			return global_configs;
+		}
+
+		internal static void SetGlobalConfigsForApi(ExcelToScriptableObjectGlobalConfigs configs) {
+			global_configs = configs ?? new ExcelToScriptableObjectGlobalConfigs();
+		}
+
 		static bool CheckIsNameSpaceValid(string ns) {
 			if (string.IsNullOrEmpty(ns)) { return true; }
 			return Regex.IsMatch(ns, @"(\S+\s*\.\s*)*\S+");

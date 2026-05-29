@@ -113,6 +113,34 @@ namespace GreatClock.Common.ExcelToSO.Tests {
 		}
 
 		[Test]
+		public void ImportByProfileAppliesProfileConfigsWithoutLeakingToUiState() {
+			MethodInfo getConfigs = typeof(ExcelToScriptableObject).GetMethod("GetGlobalConfigsForApi", BindingFlags.NonPublic | BindingFlags.Static);
+			MethodInfo setConfigs = typeof(ExcelToScriptableObject).GetMethod("SetGlobalConfigsForApi", BindingFlags.NonPublic | BindingFlags.Static);
+			Assert.That(getConfigs, Is.Not.Null);
+			Assert.That(setConfigs, Is.Not.Null);
+
+			object previous = getConfigs.Invoke(null, null);
+			ExcelToScriptableObjectGlobalConfigs sentinel = new ExcelToScriptableObjectGlobalConfigs() {
+				field_row = 5,
+				type_row = 6,
+				data_from_row = 7
+			};
+			try {
+				setConfigs.Invoke(null, new object[] { sentinel });
+				string local = TempRoot + "/Local.xlsx";
+				string cache = TempRoot + "/Cache.xlsx";
+				WriteProfileSettings(local, cache, sourceOfTruthDataFromRow: 3);
+
+				ExcelToScriptableObjectImportResult result = ExcelToScriptableObjectApi.ImportByProfile(ExcelToScriptableObject.SOURCE_OF_TRUTH_CACHE_PROFILE_ID);
+
+				Assert.That(result.profileId, Is.EqualTo(ExcelToScriptableObject.SOURCE_OF_TRUTH_CACHE_PROFILE_ID));
+				Assert.That(getConfigs.Invoke(null, null), Is.SameAs(sentinel));
+			} finally {
+				setConfigs.Invoke(null, new[] { previous });
+			}
+		}
+
+		[Test]
 		public void FieldTypeParserAcceptsSourceOfTruthAliases() {
 			AssertFieldType("integer", "Int");
 			AssertFieldType("boolean", "Bool");
@@ -158,7 +186,7 @@ namespace GreatClock.Common.ExcelToSO.Tests {
 			File.WriteAllText(ExcelToScriptableObject.SETTINGS_PATH, JsonUtility.ToJson(data, true), Encoding.UTF8);
 		}
 
-		private static void WriteProfileSettings(string localPath, string cachePath) {
+		private static void WriteProfileSettings(string localPath, string cachePath, int sourceOfTruthDataFromRow = 2) {
 			ExcelToScriptableObjectSettings data = new ExcelToScriptableObjectSettings() {
 				configs = new ExcelToScriptableObjectGlobalConfigs(),
 				excels = new[] { BuildSetting(localPath) },
@@ -175,7 +203,7 @@ namespace GreatClock.Common.ExcelToSO.Tests {
 						display_name = "Source of Truth cache",
 						input_root = ".config-sheet-forge/excel-cache/",
 						source_of_truth_cache = true,
-						configs = new ExcelToScriptableObjectGlobalConfigs(),
+						configs = new ExcelToScriptableObjectGlobalConfigs() { data_from_row = sourceOfTruthDataFromRow },
 						excels = new[] { BuildSetting(cachePath) }
 					}
 				}

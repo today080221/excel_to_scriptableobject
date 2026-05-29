@@ -104,10 +104,7 @@ namespace GreatClock.Common.ExcelToSO {
 			List<ExcelToScriptableObjectSetting> settings = profile.excels == null
 				? new List<ExcelToScriptableObjectSetting>()
 				: new List<ExcelToScriptableObjectSetting>(profile.excels);
-			AppendAllSettings(result, settings, options);
-			SaveAssetsIfNeeded(result, options);
-			result.Recalculate();
-			return result;
+			return ImportWithProfileConfigs(result, settings, profile, options, () => AppendAllSettings(result, settings, options));
 		}
 
 		private static void AppendAllSettings(ExcelToScriptableObjectImportResult result, List<ExcelToScriptableObjectSetting> settings, ExcelToScriptableObjectImportOptions options) {
@@ -152,7 +149,12 @@ namespace GreatClock.Common.ExcelToSO {
 			}
 
 			bool settingsFileExists;
-			List<ExcelToScriptableObjectSetting> settings = ExcelToScriptableObject.ReadSettingsForApi(options.profileId, FirstNonEmpty(options.settingsPath, ExcelToScriptableObject.SETTINGS_PATH), out settingsFileExists);
+			string resolvedProfileId;
+			ExcelToScriptableObjectProfile profile = ExcelToScriptableObject.ReadProfileForApi(options.profileId, FirstNonEmpty(options.settingsPath, ExcelToScriptableObject.SETTINGS_PATH), out settingsFileExists, out resolvedProfileId);
+			result.profileId = FirstNonEmpty(resolvedProfileId, result.profileId);
+			List<ExcelToScriptableObjectSetting> settings = profile == null || profile.excels == null
+				? new List<ExcelToScriptableObjectSetting>()
+				: new List<ExcelToScriptableObjectSetting>(profile.excels);
 			if (!settingsFileExists) {
 				for (int i = 0, imax = requested.Count; i < imax; i++) {
 					result.items.Add(FailedItem(null, requested[i], "ExcelToSO settings not found: " + FirstNonEmpty(options.settingsPath, ExcelToScriptableObject.SETTINGS_PATH)));
@@ -162,20 +164,22 @@ namespace GreatClock.Common.ExcelToSO {
 			}
 
 			HashSet<string> matched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			for (int i = 0, imax = settings.Count; i < imax; i++) {
-				ExcelToScriptableObjectSetting setting = settings[i];
-				if (MatchesRequested(setting.excel_name, requested)) {
-					matched.Add(NormalizePathKey(setting.excel_name));
-					AppendSettingImport(result, setting, setting, setting.excel_name, setting.asset_directory, options, false);
+			ImportWithProfileConfigs(result, settings, profile, options, () => {
+				for (int i = 0, imax = settings.Count; i < imax; i++) {
+					ExcelToScriptableObjectSetting setting = settings[i];
+					if (MatchesRequested(setting.excel_name, requested)) {
+						matched.Add(NormalizePathKey(setting.excel_name));
+						AppendSettingImport(result, setting, setting, setting.excel_name, setting.asset_directory, options, false);
+					}
+					if (!options.includeSlaves || setting.slaves == null) { continue; }
+					for (int j = 0, jmax = setting.slaves.Length; j < jmax; j++) {
+						ExcelToScriptableObjectSlave slave = setting.slaves[j];
+						if (slave == null || !MatchesRequested(slave.excel_name, requested)) { continue; }
+						matched.Add(NormalizePathKey(slave.excel_name));
+						AppendSettingImport(result, setting, setting, slave.excel_name, slave.asset_directory, options, false);
+					}
 				}
-				if (!options.includeSlaves || setting.slaves == null) { continue; }
-				for (int j = 0, jmax = setting.slaves.Length; j < jmax; j++) {
-					ExcelToScriptableObjectSlave slave = setting.slaves[j];
-					if (slave == null || !MatchesRequested(slave.excel_name, requested)) { continue; }
-					matched.Add(NormalizePathKey(slave.excel_name));
-					AppendSettingImport(result, setting, setting, slave.excel_name, slave.asset_directory, options, false);
-				}
-			}
+			}, saveAndRecalculate: false);
 
 			for (int i = 0, imax = requested.Count; i < imax; i++) {
 				string key = NormalizePathKey(requested[i]);
@@ -192,32 +196,57 @@ namespace GreatClock.Common.ExcelToSO {
 			options = NormalizeOptions(options);
 			ExcelToScriptableObjectImportResult result = CreateResult(FirstNonEmpty(options.profileId, ExcelToScriptableObject.DEFAULT_PROFILE_ID), FirstNonEmpty(options.settingsPath, ExcelToScriptableObject.SETTINGS_PATH), null);
 			bool settingsFileExists;
-			List<ExcelToScriptableObjectSetting> settings = ExcelToScriptableObject.ReadSettingsForApi(options.profileId, FirstNonEmpty(options.settingsPath, ExcelToScriptableObject.SETTINGS_PATH), out settingsFileExists);
+			string resolvedProfileId;
+			ExcelToScriptableObjectProfile profile = ExcelToScriptableObject.ReadProfileForApi(options.profileId, FirstNonEmpty(options.settingsPath, ExcelToScriptableObject.SETTINGS_PATH), out settingsFileExists, out resolvedProfileId);
+			result.profileId = FirstNonEmpty(resolvedProfileId, result.profileId);
+			List<ExcelToScriptableObjectSetting> settings = profile == null || profile.excels == null
+				? new List<ExcelToScriptableObjectSetting>()
+				: new List<ExcelToScriptableObjectSetting>(profile.excels);
 			if (!settingsFileExists) {
 				result.items.Add(FailedItem(null, null, "ExcelToSO settings not found: " + FirstNonEmpty(options.settingsPath, ExcelToScriptableObject.SETTINGS_PATH)));
 				result.Recalculate();
 				return result;
 			}
-			for (int i = 0, imax = settings.Count; i < imax; i++) {
-				ExcelToScriptableObjectSetting setting = settings[i];
-				bool selected = filter == null || filter(setting);
-				if (!selected) {
-					if (options.includeSkippedItems) {
-						result.items.Add(SkippedItem(setting.excel_name, ExcelToScriptableObject.GetAssetPathForApi(setting.excel_name, setting.asset_directory), setting.excel_name, "The setting did not match the import filter."));
+			return ImportWithProfileConfigs(result, settings, profile, options, () => {
+				for (int i = 0, imax = settings.Count; i < imax; i++) {
+					ExcelToScriptableObjectSetting setting = settings[i];
+					bool selected = filter == null || filter(setting);
+					if (!selected) {
+						if (options.includeSkippedItems) {
+							result.items.Add(SkippedItem(setting.excel_name, ExcelToScriptableObject.GetAssetPathForApi(setting.excel_name, setting.asset_directory), setting.excel_name, "The setting did not match the import filter."));
+						}
+						continue;
 					}
-					continue;
+					AppendSettingImport(result, setting, setting, setting.excel_name, setting.asset_directory, options, false);
+					if (!options.includeSlaves || setting.slaves == null) { continue; }
+					for (int j = 0, jmax = setting.slaves.Length; j < jmax; j++) {
+						ExcelToScriptableObjectSlave slave = setting.slaves[j];
+						if (slave == null) { continue; }
+						AppendSettingImport(result, setting, setting, slave.excel_name, slave.asset_directory, options, false);
+					}
 				}
-				AppendSettingImport(result, setting, setting, setting.excel_name, setting.asset_directory, options, false);
-				if (!options.includeSlaves || setting.slaves == null) { continue; }
-				for (int j = 0, jmax = setting.slaves.Length; j < jmax; j++) {
-					ExcelToScriptableObjectSlave slave = setting.slaves[j];
-					if (slave == null) { continue; }
-					AppendSettingImport(result, setting, setting, slave.excel_name, slave.asset_directory, options, false);
+			});
+		}
+
+		private static ExcelToScriptableObjectImportResult ImportWithProfileConfigs(
+			ExcelToScriptableObjectImportResult result,
+			List<ExcelToScriptableObjectSetting> settings,
+			ExcelToScriptableObjectProfile profile,
+			ExcelToScriptableObjectImportOptions options,
+			Action body,
+			bool saveAndRecalculate = true) {
+			ExcelToScriptableObjectGlobalConfigs previous = ExcelToScriptableObject.GetGlobalConfigsForApi();
+			try {
+				ExcelToScriptableObject.SetGlobalConfigsForApi(profile == null ? null : profile.configs);
+				body();
+				if (saveAndRecalculate) {
+					SaveAssetsIfNeeded(result, options);
+					result.Recalculate();
 				}
+				return result;
+			} finally {
+				ExcelToScriptableObject.SetGlobalConfigsForApi(previous);
 			}
-			SaveAssetsIfNeeded(result, options);
-			result.Recalculate();
-			return result;
 		}
 
 		private static ExcelToScriptableObjectImportOptions NormalizeOptions(ExcelToScriptableObjectImportOptions options) {
